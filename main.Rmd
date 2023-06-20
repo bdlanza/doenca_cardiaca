@@ -2,23 +2,27 @@
 title: "Classificação Doença Cardíaca"
 author: "Bruno Lanza"
 date: "05/03/2022"
-output: 
-  html_document: 
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '21'
+  html_document:
     toc: yes
     toc_depth: 21
-editor_options: 
+editor_options:
   chunk_output_type: inline
 ---
 
-PREVENDO DOENÇA CARDÍACA UTILIZANDO ÁRVORE DE CLASSIFICAÇÃO E RANDOM FOREST
+# CLASSIFICAÇÃO DE PACIENTES COM DOENÇA CARDÍACA UTILIZANDO MACHINE LEARNING
 
-Árvores de decisão e Random Forests são poderosas ferramentas de machine learning utilizadas para classificação. Utilizando a base de dados 
+Árvores de classificação e Random Forests são poderosas ferramentas de machine learning utilizadas para classificação. 
 
-Realizando a importação das bibliotecas:
+Utilizando a base de dados de doença cardiaca da UCI (UC Irvine) ambos os modelos acima citados foram treinados a fim de classificar pacientes como "saúdaveis" ou "doentes" com base em algumas características coletadas durante a entrada dos mesmos em hospitais.
+
+Importando as bibliotecas:
 
 ```{r}
-remove.packages("rlang")
-install.packages("rlang")
+library("rlang")
 library("tidyverse")
 library("ggplot2")
 library("cowplot")
@@ -29,56 +33,66 @@ library("rpart.plot")
 library("gtools")
 library("caret")
 library("scales")
+library("knitr")
 ```
 
-Importando os dados:
+###### PRÉ-PROCESSAMENTO DA BASE DE DADOS
+
+A primeira etapa é a importação da base de dados "processed.cleveland.data" que possui somente as variáveis necessárias para a classificação dos pacientes.
 
 ```{r}
-df <- read.table("C:\\Users\\bruno\\Desktop\\MBA USP - Ciência de Dados\\Projetos\\Classificação Doença Cardíaca\\processed.cleveland.data", fileEncoding = "UTF-8", sep = ",", dec = ".")
+df <- read.table("processed.cleveland.data", fileEncoding = "UTF-8", sep = ",", dec = ".")
 ```
 
-Visualizando as primeiras obsevações da base de dados:
+Após a importação podemos observar a estrutura do dataset:
 
-```{r}
-head(as.matrix(df))
-```
-
-Estutura da base de dados:
 ```{r}
 glimpse(df)
 ```
 
 Como é possível ver nossa base de dados possui 303 linhas e 14 colunas. Abaixo é possível encontrar uma breve descrição das variáveis que fazem parte da análise:
 
-v1: Idade (numérico)
-v2: Sexo (categórica binária)
+v1: Idade (numérica)
+v2: Sexo (categórica dicotômica):
+1 - Homem
+0 - Mulher
 v3: Tipo de dor no peito (categórica policotômica):
 1 - Dor típica
 2 - Dor atípica
-3 - Sem dor
+3 - Outras dores
 4 - Assintomático
-v4: Pressão arterial na chegada ao hospital (numérico)
-v5: Colesterol (numérico)
-v6: Açucar no sangue após jejum (categórica binária)
+v4: Pressão arterial na chegada ao hospital (numérica)
+v5: Colesterol (numérica)
+v6: Açúcar no sangue após jejum (categórica dicotômica):
+1 - SIM
+0 - NÃO
 v7: Eletrocardiograma em repouso (categórica policotômica):
 0 - normal
 1 - Anomalia na onda ST-T
 2 - Provavel ou definitiva hipertrofia do ventriculo esquerdo
-v8: Taxa máxima de batimento cardiaco (numérico)
-v9: Angina induzida por exercício (categórica binária)
-v10: Depressão ST induzida por exercício em relação ao repouso (num)
+v8: Taxa máxima de batimento cardiaco (numérica)
+v9: Angina induzida por exercício (categórica dicotômica):
+1 - SIM
+2 - NÃO
+v10: Depressão ST induzida por exercício em relação ao repouso (numérica)
 v11: Angulação do pico da depressão ST induzida por exercício (categórica policotômica):
 1: Angulação para cima
 2: Reta
 3: Angulação para baixo
-v12: Número de vazos principais coloridos por fluoroscopia (0 a 3).
+v12: Número de vasos principais coloridos por fluoroscopia (categórica policotômica):
+0: nenhum vaso
+1: um vaso
+2: dois vasos
+3: três vasos
 v13: Thal (categórica policotômica):
 3 - Normal
 6 - Defeito fixo
 7 - Defeito reversível
-v14: Variável dependente ou predita, diagnóstico da doença cardiaca (categórica policotômica)
+v14: Variável dependente, diagnóstico da doença cardiaca (categórica policotômica):
+0 - Sem doença cardiaca
+1, 2, 3, 4 - Presença de doença cardiaca em diferentes intensidades
 
-A primeira coisa a ser feita é renomear as variáveis para tornar a análise mais clara e também transformar as variáveis categóricas em factor.
+A próxima etapa a ser feita é renomear as variáveis para tornar a análise mais clara, transformar as variáveis categóricas em factor e remover as linhas do dataset que possuem valores faltantes.
 
 ```{r}
 df_pt <- df %>% rename(idade = "V1",
@@ -103,30 +117,32 @@ df_pt <- df %>% rename(idade = "V1",
                        angina_ex = factor(angina_ex),
                        ang_st_ex = factor(ang_st_ex),
                        thal = factor(thal),
-                       doenca = factor(ifelse(doenca > 0, 1, 0))
+                       fluor = factor(fluor),
+                       doenca = factor(ifelse(doenca > 0, "Y", "N"))
                        )
 
 df_pt <- df_pt[!(df_pt$thal == "?" | df_pt$fluor == "?"),]
-
-df_pt %>% mutate(fluor = as.numeric(fluor)) -> df_pt
 ```
 
-Além de renomear as variáveis e transformar as variáveis qualitativas em factors, a variável resposta "doenca" foi transformada em dicotômica, ou seja, agora ela representa a existência ou não de doença cardiaca. Antes da transformação ela variava de 0 a 4 indicando o nível da doença que o paciente possuia.
+No caso do dataset utilizado, as variáveis THAL e FLUOR possuem valores faltantes representados pelo caractere "?". Como somente 6 registros possuem valores faltantes optou-se por remover essas linhas do dataset.
 
-Vamos dar uma olhada agora na nova distribuição da variável "doenca":
+Além de renomear as variáveis e transformar as variáveis qualitativas em factors, a variável resposta DOENCA foi transformada em dicotômica, ou seja, agora ela representa a existência (Y) ou não (N) da doença cardiaca. Antes da transformação ela variava de 0 a 4 indicando o nível da doença que o paciente possuía.
+
+Vamos dar uma olhada agora na nova distribuição da variável DOENCA:
 
 ```{r}
 table(df_pt$doenca)
 ```
-Na nossa base de dados, na variável doença, o 1 indica a ocorrência do evento, ou seja, a presença da doença cardiaca. O 0 indica a ausência do evento, ou seja, a NÃO presença da doença cardiaca.
+Como pode ser observado o dataset é composto de mais pacientes saudáveis (160) em comparação com o número de pacientes doentes (137).
 
 Também vamos ver a base de dados depois de tratada:
 
 ```{r}
-head(as.matrix(df_pt))
+glimpse(df_pt)
 ```
+###### ANÁLISE DESCRITIVA DOS DADOS
 
-A próxima estapa da análise será ver como se comporta a distribuição de algumas variáveis da nossa base de dados.
+Com a base de dados importada e os dados pré-processados, agora é hora de ver como se comporta a distribuição de algumas variáveis.
 
 Abaixo é possível ver um gráfico representando a idade dos pacientes:
 
@@ -135,167 +151,192 @@ df_pt %>% ggplot()+
   geom_histogram(aes(x = idade), color = "black", fill = "darkred") +
   labs(title = "Idade dos pacientes",
        x = "Idade",
-       y = "Contagem") +
+       y = " ") +
   theme_classic()
 
 ```
 
-Podemos ver que a maioria dos pacientes tem idade entre 35 e 75 anos e média de 54 anos, com somente 3 pacientes abaixo dos 35 e 3 pacientes acima dos 75 anos.
+Podemos ver que existe uma concentração de pacientes com idade entre 35 e 75 anos, com somente 3 pacientes abaixo dos 35 e 3 pacientes acima dos 75 anos.
 
-Abaixo vamos ver como algumas das variáveis se comportam para o grupo de pacientes doentes e para o grupo de pacientes não doentes.
+Agora vamos analisar como algumas das variáveis se comportam para o grupo de pacientes doentes e para o grupo de pacientes não doentes.
 
 ```{r}
 plot_pressao_1 <- df_pt %>% 
-  filter(doenca == 0) %>%
+  filter(doenca == "N") %>%
   ggplot() +
   geom_histogram(aes(x = pressao), color = "black", fill = "darkred") +
   labs(title = "Pressão arterial saudáveis",
        x = "Pressão",
-       y = "Contagem") +
+       y = " ") +
   theme_classic()
 
 plot_pressao_2 <- df_pt %>% 
-  filter(doenca == 1) %>%
+  filter(doenca == "Y") %>%
   ggplot() +
   geom_histogram(aes(x = pressao), color = "black", fill = "darkred") +
   labs(title = "Pressão arterial doentes",
        x = "Pressão",
-       y = "Contagem") +
+       y = " ") +
   theme_classic()
 
 grid.arrange(plot_pressao_1, plot_pressao_2, ncol = 2)
 
 ```
 
-É possível ver que no caso da variável pressão arterial, para pacientes saudáveis, a concentração fica em torno de 120, com alguns poucos picos após esse valor e uma média de 129.25. Já para os pacientes doentes, a concentração se encontra após o valor de 120, com vários picos após esse valor e média de 134.57, ligeiramente maior que a dos pacientes saudáveis. Também podemos observar entre os pacientes doentes alguns com pressão muito acima de 180, o que não se encontra entre os pacientes saúdaveis.
+Na variável PRESSAO(referente a pressão arterial), para pacientes saudáveis, a concentração de observações fica entre 100 e 140, com alguns poucos picos após esse valor e uma média de 129,25. Já para os pacientes doentes, a concentração se encontra entre 120 e 150, com vários picos após esse valor e média de 134,57, ligeiramente maior que a dos pacientes saudáveis. Também podemos observar que entre os pacientes doentes existem alguns com pressão muito acima de 180, o que não acontece entre os pacientes saudáveis.
 
 ```{r}
 plot_colesterol_1 <- df_pt %>% 
-  filter(doenca == 0) %>%
+  filter(doenca == "N") %>%
   ggplot() +
   geom_histogram(aes(x = colesterol), color = "black", fill = "darkred") +
   labs(title = "Colesterol saudáveis",
        x = "Colesterol",
-       y = "Contagem") +
+       y = " ") +
   theme_classic()
 
 plot_colesterol_2 <- df_pt %>% 
-  filter(doenca == 1) %>%
+  filter(doenca == "Y") %>%
   ggplot() +
   geom_histogram(aes(x = colesterol), color = "black", fill = "darkred") +
   labs(title = "Colesterol doentes",
        x = "Colesterol",
-       y = "Contagem") +
+       y = " ") +
   theme_classic()
 
 grid.arrange(plot_colesterol_1, plot_colesterol_2, ncol = 2)
 ```
 
-No caso da variável colesterol, a principio pode parecer que as distribuições são semelhantes. Isso ocorre devido a presença de um valor discrepante no primeiro gráfico, onde um paciente saúdavel apresenta um colesterol acima de 500. Para melhorar a comparação podemos remover esse paciente da base de dados, facilitando assim a análise dos dois gráficos.
+No caso da variável COLESTEROL, a princípio pode parecer que as distribuições são semelhantes. Isso ocorre devido a presença de um valor discrepante no primeiro gráfico, onde um paciente saúdavel apresenta um colesterol acima de 500. Para melhorar a comparação podemos remover esse paciente da visualização, facilitando assim a análise dos dois gráficos.
 
 ```{r}
 plot_colesterol_1 <- df_pt %>% 
-  filter(doenca == 0 & colesterol < 500) %>%
+  filter(doenca == "N" & colesterol < 500) %>%
   ggplot() +
   geom_histogram(aes(x = colesterol), color = "black", fill = "darkred") +
-  labs(title = "Colesterol não doentes",
+  labs(title = "Colesterol saudáveis",
        x = "Colesterol",
-       y = "Contagem") +
+       y = " ") +
   theme_classic()
 
 plot_colesterol_2 <- df_pt %>% 
-  filter(doenca == 1) %>%
+  filter(doenca == "Y") %>%
   ggplot() +
   geom_histogram(aes(x = colesterol), color = "black", fill = "darkred") +
   labs(title = "Colesterol doentes",
        x = "Colesterol",
-       y = "Contagem") +
+       y = " ") +
   theme_classic()
 
 grid.arrange(plot_colesterol_1, plot_colesterol_2, ncol = 2)
 ```
 
-Aqui podemos observar melhor a distribuição da variável colesterol para ambos os grupos de pacientes. Para o grupo de saudáveis é possível ver que o número de observações tem uma queda brusca após 250 aproximadamente, com um único pico depois em 300 e com média de 242.64. Para os pacientes doentes o número de observações tem uma concentração maior entre 250 e 300 e média de 251.48. Para esse grupo de pacientes o número de obervações começa cair após 300 de colesterol.
+Agora podemos observar melhor a distribuição da variável COLESTEROL para ambos os grupos de pacientes. Para o grupo de saudáveis é possível ver que o número de observações tem uma queda brusca após 250 aproximadamente, com um único pico depois em 300 e com média de 242.64. Para os pacientes doentes o número de observações tem uma concentração maior entre 250 e 300 e média de 251.48. Para esse grupo de pacientes o número de observações começa cair após 300 de colesterol.
 
 ```{r}
 plot_batimento_1 <- df_pt %>% 
-  filter(doenca == 0) %>%
+  filter(doenca == "N") %>%
   ggplot() +
   geom_histogram(aes(x = bat_card), color = "black", fill = "darkred") +
   labs(title = "Batimento cardiaco saudáveis",
        x = "Número de batimentos por munito",
-       y = "Contagem") +
+       y = "") +
   theme_classic()
 
 plot_batimento_2 <- df_pt %>% 
-  filter(doenca == 1) %>%
+  filter(doenca == "Y") %>%
   ggplot() +
   geom_histogram(aes(x = bat_card), color = "black", fill = "darkred") +
   labs(title = "Batimento cardiaco doentes",
        x = "Número de batimentos por minuto",
-       y = "Contagem") +
+       y = "") +
   theme_classic()
 
 grid.arrange(plot_batimento_1, plot_batimento_2, ncol = 2)
 ```
 
-Na análise dos batimentos cardíacos, para os pacientes saudáveis a concentração de observações acontece entre 150 e 180 batimentos com média de 158, enquanto para pacientes doentes a distribuição se espalha um pouco mais para batimentos abaixo de 150 e média de 139. É muito visivel essa diferença quando observamos os picos de observações. Para pacientes saudáveis esses picos acontecem depois da marca de 150, enquanto para pacientes doentes esses picos ocorrem antes da marca de 150.
+Na análise dos batimentos cardíacos, para os pacientes saudáveis a concentração de observações acontece entre 150 e 180 batimentos com média de 158, enquanto para pacientes doentes a distribuição se espalha um pouco mais para batimentos abaixo de 150 e média de 139. É muito visível essa diferença quando observamos os picos de observações. Para pacientes saudáveis esses picos acontecem depois da marca de 150, enquanto para pacientes doentes esses picos ocorrem antes da marca de 150.
 
 
 ```{r}
 plot_dor_1 <- df_pt %>% 
-  filter(doenca == 0) %>%
+  filter(doenca == "N") %>%
   ggplot() +
   geom_bar(aes(x = dor_peito), color = "black", fill = "darkred") +
   labs(title = "Tipo de dor peitoral saudáveis",
        x = "Nível de dor",
-       y = "Contagem") +
+       y = " ") +
+  scale_x_discrete(labels = c('Típica','Atípica', "Outras", 'Assintomático')) +
   theme_classic()
 
 plot_dor_2 <- df_pt %>% 
-  filter(doenca == 1) %>%
+  filter(doenca == "Y") %>%
   ggplot() +
   geom_bar(aes(x = dor_peito), color = "black", fill = "darkred") +
   labs(title = "Tipo de dor peitoral doentes",
        x = "Nível de dor",
-       y = "Contagem") +
+       y = " ") +
+  scale_x_discrete(labels = c('Típica','Atípica', "Outras", 'Assintomático')) +
   theme_classic()
 
 grid.arrange(plot_dor_1, plot_dor_2, ncol = 2)
 ```
 
-Podemos observar nos gráficos acima que boa parte dos pacientes saudáveis chegaram ao hospital com dores no peito que não indicavam angina ou então com angina atípica. No caso dos pacientes doentes a maioria deles chegava ao hospital assintomaticos, ou seja, sem nenhuma dor no peito.  
+A próxima variável analisada foi DOR_PEITO. Podemos observar nos gráficos acima que para os pacientes saudáveis o número de ocorrências é similar entre as categorias "Atípica" e "Assintomático", com poucos pacientes tendo dor típica e um pico maior em "Outras". No caso dos pacientes doentes a maioria deles chegava ao hospital assintomáticos, ou seja, sem nenhuma dor.  
 
 ```{r}
 plot_thal_1 <- df_pt %>% 
-  filter(doenca == 0) %>%
+  filter(doenca == "N") %>%
   ggplot() +
   geom_bar(aes(x = thal), color = "black", fill = "darkred") +
-  labs(title = "Nível de Thalassemia saudáveis",
+  labs(title = "Nível de Talassemia saudáveis",
        x = "Nível",
-       y = "Contagem") +
-  scale_x_discrete(labels = c('Normal','Fixed Defect', 'Reversable Defect')) +
+       y = "") +
+  scale_x_discrete(labels = c('Normal','Defeito Fixo', 'Defeito Reversível')) +
   theme_classic()
 
 plot_thal_2 <- df_pt %>% 
-  filter(doenca == 1) %>%
+  filter(doenca == "Y") %>%
   ggplot() +
   geom_bar(aes(x = thal), color = "black", fill = "darkred") +
-  labs(title = "Nível de Thalassemia doentes",
+  labs(title = "Nível de Talassemia doentes",
        x = "Nível",
-       y = "Contagem") +
-  scale_x_discrete(labels = c('Normal','Fixed Defect', 'Reversable Defect')) +
+       y = "") +
+  scale_x_discrete(labels = c('Normal','Defeito Fixo', 'Defeito Reversível')) +
   theme_classic()
 
 grid.arrange(plot_thal_1, plot_thal_2, ncol = 2)
 ```
 
-No gráfico de comparação da variável Thal, que diz respeito ao distúrbio sanguínio Thalassemia, podemos ver uma grande diferença de comportamento entre os dois grupos. No primeiro, de pacientes saudáveis, a maior parte dos pacientes apresentam Thalessemia normal. No outro grupo, de pacientes doentes, a maioria deles apresenta a classificação Reversable Defect.
-
-Outra ponto importante que podemos analisar é a correlação entre as variaveis quantitativas da nossa base de dados.
+No gráfico de comparação da variável THAL, que diz respeito ao distúrbio sanguínio hereditário Talassemia que afeta o fluxo do sangue, podemos ver uma grande diferença de comportamento entre os dois grupos. No primeiro, de pacientes saudáveis, a maior parte apresenta Talessemia normal, ou seja, fluxo do sangue normal. No outro grupo, de pacientes doentes, a maioria deles apresenta a classificação "Defeito Reversível", onde o fluxo sanguínio está ocorrendo porém com algum tipo de problema. Além disso temos mais pacientes na categoria "Defeito Fixo", que significa que algumas partes do coração já não possuem fluxo sanguíneo.
 
 ```{r}
-variaveis <- c(1, 4, 5, 8, 10, 12)
+plot_fluor_1 <- df_pt %>% 
+  filter(doenca == "N") %>%
+  ggplot() +
+  geom_bar(aes(x = fluor), color = "black", fill = "darkred") +
+  labs(title = "Vasos coloridos fluoroscopia saudáveis",
+       x = "",
+       y = "") +
+  theme_classic()
+
+plot_fluor_2 <- df_pt %>% 
+  filter(doenca == "Y") %>%
+  ggplot() +
+  geom_bar(aes(x = fluor), color = "black", fill = "darkred") +
+  labs(title = "Vasos coloridos fluoroscopia doentes",
+       x = "",
+       y = "") +
+  theme_classic()
+
+grid.arrange(plot_fluor_1, plot_fluor_2, ncol = 2)
+```
+Na variável FLUOR, que representa o número de vasos principais coloridos por fluoroscopia, é possível ver um comportamento distinto entre os pacientes saudáveis e doentes. No grupo dos saúdáveis a maioria não apresentou vasos coloridos durante o procedimento. Já no grupo dos doentes, vários pacientes apresentaram 1, 2 ou 3 vasos coloridos durante a fluoroscopia. 
+
+Outra ponto importante que podemos analisar é a correlação entre as variáveis quantitativas da nossa base de dados.
+
+```{r}
+variaveis <- c(1, 4, 5, 8, 10)
 matriz_corr <- cor(df_pt[,variaveis])
 df_cor <- reshape::melt(matriz_corr)
 names(df_cor) <- c("var1", "var2", "correlacao") 
@@ -319,11 +360,11 @@ df_cor %>%
         axis.text.x = element_text(angle = 0))
   
 ```
-A correlação de Pearson, usada para medir correlação entre variáveis quantitativas, varia de -1 a 1, sendo -1 uma correlão perfeita negativa e 1 uma correlação perfeita positiva. No gráfico acima é possível ver que as correlações negativas que mais se destacam são entre as variáveis idade e bat_card e depressao_set_ex e bat_card. Já a correlação positiva que mais se destaca é entre as variáveis idade e fluor. 
+A correlação de Pearson, usada para medir correlação entre variáveis quantitativas, varia de -1 a 1, sendo -1 uma correlão perfeita negativa e 1 uma correlação perfeita positiva. No mapa de calor acima é possível ver que as correlações negativas que mais se destacam são entre as variáveis IDADE e BAT_CARD e DEPRESSAO_ST_EX e BAT_CARD. Já a correlação positiva que mais se destaca é entre as variáveis IDADE e FLUOR. 
 
-Podemos notar que, apesar das correlações acima serem as que mais se destacam no gráfico, elas não são necessáriamente expressivas, estando mais próximas da inexistência de correlação, representada pelo valor 0, do que dos valores de 1 e -1 que apresentam correlações perfeita, Isso significa que nossas variáveis quase não apresentam correlação entre si, ou seja, não tem características relacionadas.
+Podemos notar que, apesar das correlações acima serem as que mais se destacam no mapa de calor, elas não são necessáriamente expressivas, estando mais próximas da inexistência de correlação representada pelo valor 0 do que dos valores 1 e -1 que apresentam correlações perfeitas. Isso significa que nossas variáveis quase não apresentam correlação entre si, ou seja, não possuem uma relação de dependência ou possuem uma dependência muito fraca.
 
-Abaixo podemos ver um gráfico de pontos das variáveis idade e batimanento cardiaco, que são as que apresentam a maior correlação em módulo.
+Abaixo podemos ver um gráfico de pontos das variáveis idade e batimento cardíaco, que são as que apresentam a maior correlação em módulo.
 
 ```{r}
 df_pt %>% ggplot() +
@@ -341,8 +382,34 @@ df_pt %>% ggplot() +
 
 Podemos observar no gráfico que quanto mais avançamos na idade maior é o número de pacientes com número de batimentos cardiacos abaixo de 150. Apesar disso, podemos observar que o número de pacientes com batimentos acima de 150 se mantem quase constante conforme avançamos na idade, diminuindo drasticamento somente próximo aos 70 anos.
 
-Árvore de classificação:
+###### MODELAGEM DOS DADOS COM ÁRVORE DE DECISÃO E RANDOM FOREST
 
+A partir de agora, após a análise das características dos pacientes, passamos para o passo de criar a árvore de decisão que será responsável por classificar os pacientes de acordo com a existência ou não da doença cardíaca.
+
+Até agora a apresentação dos dados foi feita incluindo os outliers, ou seja, aquelas observações que apresentam um corportamento muito diferente do restante do conjunto. Pensando em nossa base de dados, composta de características de pacientes, é interessante remover esses outliers para a criação do modelo preditivo. Essa ação ajuda a evitar que o modelo sofra de overfitting e tenha um poder de generalização maior.
+
+Abaixo a nova distribuição da variável DOENCA após a remoção das linhas que continham outliers, lembrando que "N" representa os pacientes saudáveis e "Y" os doentes:
+
+```{r}
+lista_out <- c("idade", "pressao", "colesterol", "bat_card", "depressao_st_ex")
+
+for (item in lista_out){
+  Q1 <- quantile(df_pt[,item], .25)
+  Q3 <- quantile(df_pt[,item], .75)
+
+  IQR <- IQR(df_pt[,item])
+
+  df_pt <- subset(df_pt, df_pt[,item] > (Q1 - 1.5*IQR) & df_pt[,item] < (Q3 + 1.5*IQR))
+}
+
+table(df_pt$doenca)
+```
+
+Após a remoção dos outliers os dados foram separados no modelo 70/30, com 70% dos dados para treino e 30% dos dados para teste do modelo de classificação.
+
+A árvore de decisão foi treinada utilizando a função "rpart" do pacote "rpart".
+
+Com o auxílio da função rpart.plot podemos analisar a árvore treinada de forma visual:
 ```{r}
 set.seed(0)
 
@@ -354,35 +421,103 @@ teste = df_pt[-split_index,]
 
 CART_doenca <- rpart(formula = doenca ~ .,
                      data = treino,
-                     control = rpart.control(minsplit = 1,
-                                             cp = 0.014,
+                     xval = 10,
+                     control = rpart.control(cp = 0.0153256,
                                              maxdepth = 30),
                      parms = list(split = "information"),
                      method = "class")
 
 rpart.plot(CART_doenca)
+```
+Algumas observações importantes:
+* Pode-se notar que o primeiro nó é o da variável THAL, que durante a etapa de exploração apresentou uma grande diferença entre os pacientes saudáveis e doentes; 
+* A próxima variável utilizada para separar os pacientes foi FLUOR, que também apresentou um comportamento distinto entre os dois grupos de pacientes;
+* Após os dois nós iniciais as variáveis que foram utilizadas para a separação da base foram DOR_PEITO e DEPRESSAO_ST_EX;
+* Variáveis como ACUCAR, ANG_ST_EX e SEXO não apareceram nos nós da árvore.
 
+Acurácia, Sensibilidade, Especificidade e a área abaixo da curva ROC foram as métricas utilizadas para avaliar a performance do modelo tanto na base de treino quanto na base de testes.
+
+A seguir podemos analisar essas informações junto com as matrizes de confusão:
+
+```{r}
+
+sprintf("Informações das previões na base de treino:")
 fit_doenca_treino <- predict(CART_doenca, treino)
-treino['fit'] <- ifelse(fit_doenca_treino[,2]>.5,"1","0")
+treino['fit'] <- factor(ifelse(fit_doenca_treino[,2]>.5,"Y","N"))
 
-tabela_treino <- table(treino$doenca, treino$fit)
+cat("\n")
 
+sprintf("Matriz de confusão:")
+tabela_treino <- table(treino$fit, treino$doenca)
+tabela_treino
+
+cat("\n")
+
+sprintf("Acurácia na base de treino:")
+cat("\n")
 ac_treino <- (tabela_treino[1,1] + tabela_treino[2,2]) / sum(tabela_treino)
 ac_treino
 
-fit_doenca_teste <- predict(CART_doenca, teste)
-teste['fit'] <- ifelse(fit_doenca_teste[,2]>.5,"1","0")
+cat("\n")
 
-tabela_teste <- table(teste$doenca, teste$fit)
+sprintf("ROC, Sensibilidade e Especificidade na base de treino:")
+cat("\n")
+aval_treino <- data.frame(obs = treino$doenca,
+                          pred = treino$fit,
+                          Y = fit_doenca_treino[,2],
+                          N = 1 - fit_doenca_treino[,2])
+
+caret::twoClassSummary(aval_treino, lev=levels(aval_treino$obs))
+
+cat("\n")
+
+sprintf("Informações das previões na basede teste:")
+fit_doenca_teste <- predict(CART_doenca, teste)
+teste['fit'] <- factor(ifelse(fit_doenca_teste[,2]>.5, "Y","N"))
+
+cat("\n")
+
+sprintf("Matriz de confusão:")
+tabela_teste <- table(teste$fit, teste$doenca)
 tabela_teste
 
+cat("\n")
+
+sprintf("Acurácia na base de teste:")
+cat("\n")
 ac_teste <- (tabela_teste[1,1] + tabela_teste[2,2]) / sum(tabela_teste)
 ac_teste
 
+cat("\n")
+
+sprintf("ROC, Sensibilidade e Especificidade na base de teste:")
+cat("\n")
+aval_teste <- data.frame(obs = teste$doenca,
+                          pred = teste$fit,
+                          Y = fit_doenca_teste[,2],
+                          N = 1 - fit_doenca_teste[,2])
+
+caret::twoClassSummary(aval_teste, lev=levels(aval_teste$obs))
+
+#removendo as colunas de fit das bases de treino e teste
+treino <- select(treino, -"fit")
+teste <- select(teste, -"fit")
 ```
 
-Random Forest:
+Na base de treino o modelo teve uma acurácia de 86,38% e uma área abaixo da curva ROC de 0,89 utilizando um cutoff de 50%, ou seja, todas os pacientes que tiveram uma probabilidade calculada para a classe "Y" de mais de 50% foram classificados como DOENTES. vários valores de cutoff foram testados e o de 50% foi o que apresentou a melhor acurácia, ROC e balanço entre sensibilidade (91%) e especificidade (80%).
+
+Na base de teste o modelo teve uma acurácia de 81,70% e uma área abaixo da curva ROC de 0,86 também utilizando um cutoff de 50%, com 85% de sensibilidade e 75% de especificidade. 
+
+O modelo teve um bom resultado na base de teste com uma acurácia de quase 82%, apresentando equilíbrio entre a acurácia da base de treino e teste.  Esse equilíbrio é um indicativo do poder de generalização do modelo e baixo overfitting.
+
+Por último, para melhorar ainda mais o resultado obtido com a Árvore de Decisão, foi treinada uma Random Forest utilizando a mesma base de dados de pacientes. 
+
+O modelo de Random Forest utilizado foi a biblioteca "Caret", que oferece diversas opções de hiperparâmetros para controle do treinamento além de pré-processamento da base de treino com a função trainControl().
+
+Os detalhes do modelo treinado podem ser encontrados a seguir:
+
 ```{r}
+
 set.seed(0)
 
 controle <- trainControl(method = "repeatedcv",
@@ -392,34 +527,69 @@ controle <- trainControl(method = "repeatedcv",
                          summaryFunction = twoClassSummary,
                          classProbs = TRUE)
 
-grid <- base::expand.grid(.mtry=c(1:30))
+grid <- base::expand.grid(.mtry=c(1:13))
 
-novo_treino <- treino %>% mutate(novo_doenca = factor(ifelse(doenca == 1, "sim", "não")))
-novo_teste <- teste %>% mutate(novo_doenca = factor(ifelse(doenca == 1, "sim", "não")))
-
-CART_doenca_gc <- caret::train(novo_doenca ~ . - doenca - fit,
-                               data = novo_treino,
+CART_doenca_gc <- caret::train(doenca ~.,
+                               data = treino,
                                method = "rf",
                                metric = "ROC",
                                trControl = controle,
                                ntree = 600,
                                tuneGrid = grid)
 
-fit_doenca_gc_treino <- predict(CART_doenca_gc, novo_treino)
-novo_treino["fit"] <- fit_doenca_gc_treino
+```
 
-fit_doenca_gc_teste <- predict(CART_doenca_gc, novo_teste)
-novo_teste["fit"] <- fit_doenca_gc_teste
+Podemos também analisar as métricas de avaliação da Random Forest:
 
-tabela_treino_gc <- table(novo_treino$novo_doenca, novo_treino$fit)
+```{r}
 
+fit_doenca_gc_treino <- predict(CART_doenca_gc, treino, type = "prob")
+treino["fit"] <- factor(ifelse(fit_doenca_gc_treino[,2]>.5,"Y","N"))
+
+fit_doenca_gc_teste <- predict(CART_doenca_gc, teste, type = "prob")
+teste["fit"] <- factor(ifelse(fit_doenca_gc_teste[,2]>.5,"Y","N"))
+
+sprintf("Informações das previões na base de treino:")
+cat("\n")
+
+sprintf("Matriz de confusão:")
+tabela_treino_gc <- table(treino$fit, treino$doenca)
+tabela_treino_gc
+
+cat("\n")
+
+sprintf("Acurácia na base de treino:")
 ac_treino_gc <- (tabela_treino_gc[1,1] + tabela_treino_gc[2,2]) / sum(tabela_treino_gc)
-ac_treino
+ac_treino_gc
 
-tabela_teste_gc <- table(novo_teste$novo_doenca, novo_teste$fit)
+cat("\n")
 
+sprintf("Informações das previões na base de teste:")
+cat("\n")
+
+sprintf("Matriz de confusão:")
+tabela_teste_gc <- table(teste$fit, teste$doenca)
+tabela_teste_gc
+
+cat("\n")
+
+sprintf("Acurácia na base teste:")
 ac_teste_gc <- (tabela_teste_gc[1,1] + tabela_teste_gc[2,2]) / sum(tabela_teste_gc)
 ac_teste_gc
 
-```
+cat("\n")
 
+sprintf("ROC, Sensibilidade e Especificidade na base de teste:")
+cat("\n")
+aval_teste <- data.frame(obs = teste$doenca,
+                         pred = teste$fit,
+                         Y = fit_doenca_gc_teste[,2],
+                         N = 1 - fit_doenca_gc_teste[,2])
+
+caret::twoClassSummary(aval_teste, lev=levels(aval_teste$obs))
+```
+Como pode ser visto, na base de treino tivemos um ganho de acurácia de 3 pontos percentuais em relação a acurácia da árvore de decisão. Na base de testes, por sua vez, o ganho foi maior, de 6 pontos pecentuais.
+
+Enquanto o modelo árvore de decisão atingiu uma acurária de 81,70% com uma área abaixo da curva ROC de 0,86, a random forest conseguiu atingir uma acurária de 87,80% com 0,92 de ROC.
+
+Outro métrica importante a ser observada é a sensibilidade, que no modelo random forest atingiu 93,87%. Isso indica uma capacidade maior de classificação de pacientes doentes, possibilitando que esses sejam encaminhados para uma análise mais aprofundada em um tempo menor. 
