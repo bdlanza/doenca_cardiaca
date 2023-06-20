@@ -121,6 +121,8 @@ df_pt <- df %>% rename(idade = "V1",
                        doenca = factor(ifelse(doenca > 0, "Y", "N"))
                        )
 
+which(df_pt == "?", arr.ind=TRUE)
+
 df_pt <- df_pt[!(df_pt$thal == "?" | df_pt$fluor == "?"),]
 ```
 
